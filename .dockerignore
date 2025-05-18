@@ -1,0 +1,24 @@
+# Ignore logs and temp files
+*.log
+
+# Ignore git files
+.git
+.gitignore
+
+# Ignore Docker files
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Ignore environment files
+.env
+.env.local
+.env.*.local
+
+# Ignore IDE/editor config files
+.vscode/
+.idea/
+*.swp
+
+# Ignore secrets
+secrets/

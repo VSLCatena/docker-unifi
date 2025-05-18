@@ -1,0 +1,121 @@
+
+networks:
+  net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: '${SUBNET:-192.168.32.0/29}'
+    driver_opts:
+      com.docker.network.bridge.name: shortname_net
+
+volumes:
+  project:
+    driver: local
+  db:
+    driver: local
+  pmadata:
+    driver: local
+
+secrets:
+  SECRET1:
+    file: ./secrets/secret1.txt
+  #KEY2:
+    #file: ~/somefilename2
+
+services:
+  project.php:
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.${PROJECT}.rule=Host(`${PROJECT_FQDN}`)"
+      - "traefik.http.routers.${PROJECT}.entrypoints=${PROJECT_ENTRYPOINT}"  
+    container_name: project.php
+    hostname: php
+    resources:
+      limits:
+        cpus: '0.05'
+        memory: 128M
+      reservations:
+        cpus: '0.05'
+        memory: 64M
+    secrets:
+      - SECRET1
+    pull_policy: if_not_present
+    image: ghcr.io/vslcatena/docker-template:master
+    build:
+      context: ./src
+      dockerfile: Dockerfile
+      args:
+        DEPLOY_ENV: "production"
+    environment:
+      TZ: 'Europe/Amsterdam'
+      MYSQL_HOST: '${MYSQL_HOST:-db}'
+      MYSQL_USER: '${MYSQL_USER:-dbuser}'
+      MYSQL_PASSWORD: '${MYSQL_PASSWORD:-dbpassword}'
+      MYSQL_DATABASE: '${MYSQL_DATABASE:-db}'
+    restart: unless-stopped
+    tty: true
+    ports:
+      - '${PROJECT_IP:-0.0.0.0}:${PROJECT_PORT:-4080}:80'
+    depends_on:
+      - db
+    volumes:
+      - '/etc/localtime:/etc/localtime:ro'
+      - project:/var/www/html
+    networks:
+      - net        
+
+  project.db:
+    image: 'mariadb:10'
+    container_name: project.db
+    hostname: db
+    resources:
+      limits:
+        cpus: '0.05'
+        memory: 512M
+      reservations:
+        cpus: '0.05'
+        memory: 64M
+    restart: always
+    ports:
+      - 3306:3306
+    secrets:
+      - SECRET1
+    environment:
+      MYSQL_ROOT_PASSWORD: '${MYSQL_ROOT_PASSWORD:-dbrootpassword}'
+      MYSQL_DATABASE: '${MYSQL_DATABASE:-db}'
+      MYSQL_USER: '${MYSQL_USER:-dbuser}'
+      MYSQL_PASSWORD: '${MYSQL_PASSWORD:-dbpassword}'       
+      MYSQL_ROOT_HOST: "%"
+      MYSQL_ALLOW_EMPTY_PASSWORD: 'no'
+    volumes:
+      - 'db:/var/lib/mysql'
+    networks:
+      - net
+
+  project.pma:
+    container_name: project.pma
+    hostname: pma
+    image: ghcr.io/linuxserver/phpmyadmin
+    profiles:
+      - dev
+    resources:
+      limits:
+        cpus: '0.05'
+        memory: 512M
+      reservations:
+        cpus: '0.05'
+        memory: 32M
+    environment:
+      PMA_HOST: '${MYSQL_HOST:-db}'
+      PMA_USER: root
+      PMA_PASSWORD: '${MYSQL_ROOT_PASSWORD:-dbrootpassword}'
+      TZ: Europe/Amsterdam
+    ports:
+      - '${PROJECT_IP:-0.0.0.0}:${PROJECT_PMA_PORT:-81}:80'
+    depends_on:
+      - db
+    volumes:
+      - 'pmadata:/config'
+    restart: unless-stopped
+    networks:
+      - net

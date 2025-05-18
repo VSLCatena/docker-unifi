@@ -1,0 +1,38 @@
+name: Verify PR labels
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+jobs:
+  check_labels:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check labels
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const labels = context.payload.pull_request.labels.map(label => label.name);
+            const expectedLabels = [
+              'breaking',
+              'major',
+              'feature',
+              'enhancement',
+              'fix',
+              'bugfix',
+              'bug',
+              'chore',
+              'dependencies',
+              'security',
+              'minor',
+              'patch',
+              'ci'
+            ];
+            const missingLabels = expectedLabels.filter(label => !labels.includes(label));
+            if (missingLabels.length == expectedLabels.length) {
+              core.setFailed(`Missing labels: ${missingLabels.join(', ')}`);
+            }
