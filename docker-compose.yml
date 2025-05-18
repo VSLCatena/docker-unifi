@@ -1,121 +1,87 @@
-
 networks:
   net:
     driver: bridge
     ipam:
-      config:
-        - subnet: '${SUBNET:-192.168.32.0/29}'
+     driver: default
+     config:
+       - subnet: ${CONTAINER_SUBNET}
     driver_opts:
-      com.docker.network.bridge.name: shortname_net
+      com.docker.network.bridge.name: unifi_net
 
 volumes:
-  project:
-    driver: local
-  db:
-    driver: local
-  pmadata:
-    driver: local
-
-secrets:
-  SECRET1:
-    file: ./secrets/secret1.txt
-  #KEY2:
-    #file: ~/somefilename2
+   data:
+   init:
+   db:
 
 services:
-  project.php:
+  unifi:
+    image: lscr.io/linuxserver/unifi-network-application:latest
+    container_name: unifi
+    hostname: unifi
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.${PROJECT}.rule=Host(`${PROJECT_FQDN}`)"
-      - "traefik.http.routers.${PROJECT}.entrypoints=${PROJECT_ENTRYPOINT}"  
-    container_name: project.php
-    hostname: php
-    resources:
-      limits:
-        cpus: '0.05'
-        memory: 128M
-      reservations:
-        cpus: '0.05'
-        memory: 64M
-    secrets:
-      - SECRET1
-    pull_policy: if_not_present
-    image: ghcr.io/vslcatena/docker-template:master
-    build:
-      context: ./src
-      dockerfile: Dockerfile
-      args:
-        DEPLOY_ENV: "production"
+      - "traefik.http.routers.account.rule=Host(`${TRAEFIK_FQDN}`)"
+      - "traefik.http.routers.account.entrypoints=${TRAEFIK_ENTRYPOINT}"
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
     environment:
-      TZ: 'Europe/Amsterdam'
-      MYSQL_HOST: '${MYSQL_HOST:-db}'
-      MYSQL_USER: '${MYSQL_USER:-dbuser}'
-      MYSQL_PASSWORD: '${MYSQL_PASSWORD:-dbpassword}'
-      MYSQL_DATABASE: '${MYSQL_DATABASE:-db}'
-    restart: unless-stopped
-    tty: true
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Amsterdam
+      - MONGO_HOST=${MONGO_HOST}
+      - MONGO_USER=${MONGO_USER}
+      - MONGO_PASS=${MONGO_PASS}
+      - MONGO_DBNAME=${MONGO_DBNAME}
+      - MONGO_PORT=27017
+      - MONGO_AUTHSOURCE=admin
+      - MEM_LIMIT=1024 #optional
+      - MEM_STARTUP=1024 #optional
+      - MONGO_TLS= #optional
+    volumes:
+      - data:/config
     ports:
-      - '${PROJECT_IP:-0.0.0.0}:${PROJECT_PORT:-4080}:80'
+      - ${IP_PUBLIC}:3478:3478/udp #STUN
+      - ${IP_PUBLIC}:10001:10001/udp #DEVICE Discovery
+      - ${IP_PUBLIC}:8080:8080 #Device & App Communication
+      - ${IP_PUBLIC}:8443:8443 #GUI
+      - ${IP_PUBLIC}:1900:1900/udp #Make App discoverable on L2 network
+      - ${IP_PUBLIC}:8843:8843 #Used for HTTPS portal redirection.
+#      - ${IP_PUBLIC}:8880:8880 #Used for HTTP portal redirection.
+      - ${IP_PUBLIC}:6789:6789 #Used for UniFi mobile speed test.
+#      - ${IP_PUBLIC}:5514:5514/udp #Used for remote syslog capture.
     depends_on:
-      - db
-    volumes:
-      - '/etc/localtime:/etc/localtime:ro'
-      - project:/var/www/html
-    networks:
-      - net        
-
-  project.db:
-    image: 'mariadb:10'
-    container_name: project.db
-    hostname: db
-    resources:
-      limits:
-        cpus: '0.05'
-        memory: 512M
-      reservations:
-        cpus: '0.05'
-        memory: 64M
-    restart: always
-    ports:
-      - 3306:3306
-    secrets:
-      - SECRET1
-    environment:
-      MYSQL_ROOT_PASSWORD: '${MYSQL_ROOT_PASSWORD:-dbrootpassword}'
-      MYSQL_DATABASE: '${MYSQL_DATABASE:-db}'
-      MYSQL_USER: '${MYSQL_USER:-dbuser}'
-      MYSQL_PASSWORD: '${MYSQL_PASSWORD:-dbpassword}'       
-      MYSQL_ROOT_HOST: "%"
-      MYSQL_ALLOW_EMPTY_PASSWORD: 'no'
-    volumes:
-      - 'db:/var/lib/mysql'
-    networks:
-      - net
-
-  project.pma:
-    container_name: project.pma
-    hostname: pma
-    image: ghcr.io/linuxserver/phpmyadmin
-    profiles:
-      - dev
-    resources:
-      limits:
-        cpus: '0.05'
-        memory: 512M
-      reservations:
-        cpus: '0.05'
-        memory: 32M
-    environment:
-      PMA_HOST: '${MYSQL_HOST:-db}'
-      PMA_USER: root
-      PMA_PASSWORD: '${MYSQL_ROOT_PASSWORD:-dbrootpassword}'
-      TZ: Europe/Amsterdam
-    ports:
-      - '${PROJECT_IP:-0.0.0.0}:${PROJECT_PMA_PORT:-81}:80'
-    depends_on:
-      - db
-    volumes:
-      - 'pmadata:/config'
+      - unifi.db
     restart: unless-stopped
     networks:
       - net
+  
+  unifi.db:
+    image: docker.io/mongo:7.0
+    container_name: unifi.db
+    hostname: unifi.db
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD}
+      - MONGO_USER=${MONGO_USER}
+      - MONGO_PASS=${MONGO_PASS}
+      - MONGO_DBNAME=${MONGO_DBNAME}
+      - MONGO_AUTHSOURCE=admin
+    volumes:
+      - db:/data/db
+      - init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: echo 'db.runCommand({serverStatus:1}).ok' | mongosh $MONGO_AUTHSOURCE -u $MONGO_USER -p $MONGO_PASS --quiet | grep 1
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+    networks: 
+      - net
+
