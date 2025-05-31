@@ -20,8 +20,8 @@ services:
     hostname: unifi
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.account.rule=Host(`${TRAEFIK_FQDN}`)"
-      - "traefik.http.routers.account.entrypoints=${TRAEFIK_ENTRYPOINT}"
+      - "traefik.http.routers.unifi.rule=Host(`${TRAEFIK_FQDN}`)"
+      - "traefik.http.routers.unifi.entrypoints=${TRAEFIK_ENTRYPOINT}"
     deploy:
       resources:
         limits:
